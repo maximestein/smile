@@ -45,23 +45,23 @@ public class SparseMatrix implements Matrix, MatrixMultiplication<SparseMatrix, 
     /**
      * The number of rows.
      */
-    private int nrows;
+    public int nrows;
     /**
      * The number of columns.
      */
-    private int ncols;
+    public int ncols;
     /**
      * The index of the start of columns.
      */
-    private int[] colIndex;
+    public int[] colIndex;
     /**
      * The row indices of nonzero values.
      */
-    private int[] rowIndex;
+    public int[] rowIndex;
     /**
      * The array of nonzero values stored column by column.
      */
-    private double[] x;
+    public float[] x;
     /**
      * True if the matrix is symmetric.
      */
@@ -78,7 +78,7 @@ public class SparseMatrix implements Matrix, MatrixMultiplication<SparseMatrix, 
         this.ncols = ncols;
         rowIndex = new int[nvals];
         colIndex = new int[ncols + 1];
-        x = new double[nvals];
+        x = new float[nvals];
     }
 
     /**
@@ -159,6 +159,22 @@ public class SparseMatrix implements Matrix, MatrixMultiplication<SparseMatrix, 
     @Override
     public int ncols() {
         return ncols;
+    }
+
+    public double[][] toDense() {
+        double[][] dense = new double[this.nrows][this.ncols];
+
+        for (int iColptr = 0; iColptr < this.colIndex.length - 1; iColptr++) {
+            int firstEntrySubscript = this.colIndex[iColptr];
+            int lastSubscriptCol = this.colIndex[iColptr + 1] - 1;
+
+            for (int subscript = firstEntrySubscript; subscript <= lastSubscriptCol; subscript++) {
+                int row = this.rowIndex[subscript];
+                double value = this.x[subscript];
+                dense[row][iColptr] = value;
+            }
+        }
+        return dense;
     }
 
     /**
@@ -402,6 +418,98 @@ public class SparseMatrix implements Matrix, MatrixMultiplication<SparseMatrix, 
         return aat(AT);
     }
 
+    public SparseMatrix aatLowerTriangular() {
+        SparseMatrix AT = transpose();
+        return lowerTriangularSparseAAT(AT);
+    }
+
+    public SparseMatrix lowerTriangularSparseAAT(SparseMatrix AT) {
+
+        int m = nrows;
+        int[] done = new int[m];
+        for (int i = 0; i < m; i++) {
+            done[i] = -1;
+        }
+
+        // First pass determines the number of nonzeros.
+        int nDiag = 0;
+        int nNonDiagLowerTri = 0;
+        // Outer loop over columns of A' in AA'
+        for (int j = 0; j < m; j++) {
+            for (int i = AT.colIndex[j]; i < AT.colIndex[j + 1]; i++) {
+                int k = AT.rowIndex[i];
+                for (int l = colIndex[k]; l < colIndex[k + 1]; l++) {
+                    int h = rowIndex[l];
+                    // Test if contribution already included.
+                    if (done[h] != j) {
+                        done[h] = j;
+                        if (j == h) {
+                            nDiag++;
+                        } else if (h > j) {
+                            nNonDiagLowerTri++;
+                        }
+                    }
+                }
+            }
+        }
+
+        SparseMatrix lowerTriangularSparseAAT = new SparseMatrix(m, m, nDiag + nNonDiagLowerTri);
+
+        int nvals = 0;
+        for (int i = 0; i < m; i++) {
+            done[i] = -1;
+        }
+
+        // Second pass determines columns of aat. Code is identical to first
+        // pass except colIndex and rowIndex get assigned at appropriate places.
+        for (int j = 0; j < m; j++) {
+            lowerTriangularSparseAAT.colIndex[j] = nvals;
+            for (int i = AT.colIndex[j]; i < AT.colIndex[j + 1]; i++) {
+                int k = AT.rowIndex[i];
+                for (int l = colIndex[k]; l < colIndex[k + 1]; l++) {
+                    int h = rowIndex[l];
+                    if (h >= j) {
+                        if (done[h] != j) {
+                            done[h] = j;
+                            lowerTriangularSparseAAT.rowIndex[nvals] = h;
+                            nvals++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Set last value.
+        lowerTriangularSparseAAT.colIndex[m] = nvals;
+
+        // Sort columns.
+        for (int j = 0; j < m; j++) {
+            if (lowerTriangularSparseAAT.colIndex[j + 1] - lowerTriangularSparseAAT.colIndex[j] > 1) {
+                Arrays.sort(lowerTriangularSparseAAT.rowIndex, lowerTriangularSparseAAT.colIndex[j], lowerTriangularSparseAAT.colIndex[j + 1]);
+            }
+        }
+
+        float[] temp = new float[m];
+        for (int i = 0; i < m; i++) {
+            for (int j = AT.colIndex[i]; j < AT.colIndex[i + 1]; j++) {
+                int k = AT.rowIndex[j];
+                for (int l = colIndex[k]; l < colIndex[k + 1]; l++) {
+                    int h = rowIndex[l];
+                    if (h >= i) {
+                        temp[h] += AT.x[j] * x[l];
+                    }
+                }
+            }
+
+            for (int j = lowerTriangularSparseAAT.colIndex[i]; j < lowerTriangularSparseAAT.colIndex[i + 1]; j++) {
+                int k = lowerTriangularSparseAAT.rowIndex[j];
+                lowerTriangularSparseAAT.x[j] = temp[k];
+                temp[k] = 0;
+            }
+        }
+        return lowerTriangularSparseAAT;
+    }
+
     private SparseMatrix aat(SparseMatrix AT) {
         int m = nrows;
         int[] done = new int[m];
@@ -460,20 +568,23 @@ public class SparseMatrix implements Matrix, MatrixMultiplication<SparseMatrix, 
             }
         }
 
-        double[] temp = new double[m];
+        float[] temp = new float[m];
         for (int i = 0; i < m; i++) {
             for (int j = AT.colIndex[i]; j < AT.colIndex[i + 1]; j++) {
                 int k = AT.rowIndex[j];
                 for (int l = colIndex[k]; l < colIndex[k + 1]; l++) {
                     int h = rowIndex[l];
+                    double value = AT.x[j] * x[l];
+//          if (value > 0.01) {
                     temp[h] += AT.x[j] * x[l];
+//          }
                 }
             }
 
             for (int j = aat.colIndex[i]; j < aat.colIndex[i + 1]; j++) {
                 int k = aat.rowIndex[j];
                 aat.x[j] = temp[k];
-                temp[k] = 0.0;
+                temp[k] = 0;
             }
         }
 

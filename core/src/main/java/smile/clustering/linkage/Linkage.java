@@ -1,10 +1,10 @@
 /*******************************************************************************
  * Copyright (c) 2010 Haifeng Li
- *   
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *  
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,19 +18,25 @@ package smile.clustering.linkage;
 
 /**
  * A measure of dissimilarity between clusters (i.e. sets of observations).
- * 
+ *
  * <h2>References</h2>
  * <ol>
- * <li> Anil K. Jain, Richard C. Dubes. Algorithms for clustering data. 1988.</li> 
+ * <li> Anil K. Jain, Richard C. Dubes. Algorithms for clustering data. 1988.</li>
  * </ol>
- * 
+ *
  * @see smile.clustering.HierarchicalClustering
  *
  * @author Haifeng Li
+ *
+ * [EBX] Modifications made to file:
+ *  - init() now takes a float[] as an input instead of a double[][]. The proximity variable is
+ *  directly assigned since we provide directly a 1D condensed matrix. The 1D condensed matrix
+ *  was built from the 2D dense matrix in the original version
+ *
  */
 public abstract class Linkage {
     /** The data size. */
-    int size;
+    long size;
 
     /**
      * Linearized proximity matrix to store the pair-wise distance measure
@@ -43,37 +49,32 @@ public abstract class Linkage {
     float[] proximity;
 
     /** Initialize the linkage with the lower triangular proximity matrix. */
-    void init(double[][] proximity) {
-        size = proximity.length;
-        this.proximity = new float[size * (size+1) / 2];
-
-        // row wise
-        /*
-        for (int i = 0, k = 0; i < size; i++) {
-            double[] pi = proximity[i];
-            for (int j = 0; j <= i; j++, k++) {
-                this.proximity[k] = (float) pi[j];
-            }
-        }
-        */
-
-        // column wise
-        for (int j = 0, k = 0; j < size; j++) {
-            for (int i = j; i < size; i++, k++) {
-                this.proximity[k] = (float) proximity[i][j];
-            }
-        }
+    void init(float[] proximity) {
+        size = getSize(proximity);
+        this.proximity = proximity;
     }
 
-    int index(int i, int j) {
+    private int getSize(float[] proximity) {
+        int i = 0;
+        int sizeCondensed = proximity.length;
+        int result = 0;
+        while (result != sizeCondensed) {
+            i++;
+            result += i;
+        }
+        return i;
+    }
+
+    int index(long i, long j) {
         // row wise
         // return i > j ? i*(i+1)/2 + j : j*(j+1)/2 + i;
         // column wise
-        return i > j ? proximity.length - (size-j)*(size-j+1)/2 + i - j : proximity.length - (size-i)*(size-i+1)/2 + j - i;
+        return i > j ? (int) (proximity.length - (size-j)*(size-j+1)/2 + i - j) :
+            (int) (proximity.length - (size-i)*(size-i+1)/2 + j - i);
     }
 
     /** Returns the proximity matrix size. */
-    public int size() {
+    public long size() {
         return size;
     }
 
